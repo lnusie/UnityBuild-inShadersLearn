@@ -1,4 +1,4 @@
-﻿Shader "X_Shader/Standard/Part2_Lights"
+﻿Shader "X_Shader/Standard/Part3_Bumpiness"
 {
     Properties
     {
@@ -11,7 +11,21 @@
         // _Metallic值在Gamma空间下会得到正常的效果，加上[Gamma]后则线性空间下，Unity会自动
         //矫正_Metallic的值。
         [Gamma]_Metallic ("Metallic", Range(0, 1)) = 0
+        [NoScaleOffset] _NormalMap ("Normals",2D) = "bump"{}
+        _BumpScale ("Bump Scale", Float) = 1
+        _DetailTex ("Detail Texture", 2D) = "gray" {}
+        [NoScaleOffset] _DetailNormalMap ("Detail Normals",2D) = "bump"{}
+        _DetailBumpScale ("Detail Bump Scale", Float) = 1
+
+
     }
+
+    CGINCLUDE //在这个位置定义的关键字对所有Pass都生效
+
+    #define BINORMAL_PER_FRAGMENT
+
+    ENDCG
+
     SubShader
     {
         // No culling or depth
@@ -32,7 +46,7 @@
             #pragma vertex vert
             #pragma fragment frag
 
-            #include "Part2_Lights_Core.cginc"
+            #include "Part3_Bumpiness_Core.cginc"
 
             ENDCG
         }
@@ -50,7 +64,7 @@
             ZWrite Off
 
             CGPROGRAM
-            #pragma target 3.0
+            #pragma target 3.0 
             #pragma vertex vert
             #pragma fragment frag
 
@@ -64,7 +78,7 @@
             //顶点光源宏，顶点光源只支持点光源
             #pragma multi_compile _ VERTEXLIGHT_ON
 
-            #include "Part2_Lights_Core.cginc"
+            #include "Part3_Bumpiness_Core.cginc"
 
             ENDCG
 

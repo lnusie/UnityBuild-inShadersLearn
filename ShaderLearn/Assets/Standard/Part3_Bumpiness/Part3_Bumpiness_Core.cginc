@@ -1,7 +1,7 @@
 
 
-    #if !defined(PART2_INCLUDE)
-    #define PART2_INCLUDE
+    #if !defined(PART3_INCLUDED)
+    #define PART3_INCLUDED
     
     #include "UnityPBSLighting.cginc" 
     #include "AutoLight.cginc" 
@@ -14,28 +14,48 @@
         float4 vertex : POSITION;
         float3 normal : NORMAL;
         float2 uv : TEXCOORD0;
-
+        float4 tangent : TEXCOORD1;
       
 
     };
 
     struct v2f
     {
-        float2 uv : TEXCOORD0;
+        float4 uv : TEXCOORD0;
         float4 vertex : SV_POSITION;
-        float3 normal : TEXCOORD1;      
-        float3 worldPos :TEXCOORD2;
+        float3 normal : TEXCOORD1;
+        #if defined(BINORMAL_PER_FRAGMENT)//在frag方法里计算副法线
+            float4 tangent : TEXCOORD2;
+        #else
+            //在vert方法里计算副法线
+            float3 tangent : TEXCOORD2;
+            float3 binormal : TEXCOORD3;
+        #endif 
+
+            float3 worldPos : TEXCOORD4;
           #if defined(VERTEXLIGHT_ON)
-            float3 vertexLightColor : TEXCOORD3;
+            float3 vertexLightColor : TEXCOORD5;
         #endif
     };
 
     fixed4 _Tint;
-    fixed4 _MainTex_ST;
     float _Smoothness;
     //float4 _SpecularTint;
     float _Metallic;
+
+    float _BumpScale;
+    float _DetailBumpScale;
+
     sampler2D _MainTex;
+    sampler2D _DetailTex;
+    fixed4 _MainTex_ST;
+    fixed4 _DetailTex_ST;
+
+    sampler2D _NormalMap;
+    sampler2D _DetailNormalMap;
+   
+
+
 
     //UnityStandardUtils中DiffuseAndSpecularFromMetallic的具体实现
     inline half _OneMinusReflectivityFromMetallic(half metallic) {
@@ -184,8 +204,29 @@
     //     return col;
     // }
 
+    //UnityStandardUtils中UnpackScaleNormal的实现 内部判断了是否使用DXT5nm格式的法线贴图
+    // half3 UnpackScaleNormal (half4 packednormal, half bumpScale) {
+    // #if defined(UNITY_NO_DXT5nm)
+    //     return packednormal.xyz * 2 - 1;
+    // #else
+    //     half3 normal;
+    //     normal.xy = (packednormal.wy * 2 - 1);
+    //     #if (SHADER_TARGET >= 30)
+    //         // SM2.0: instruction count limitation
+    //         // SM2.0: normal scaler is not supported
+    //         normal.xy *= bumpScale;
+    //     #endif
+    //     normal.z = sqrt(1.0 - saturate(dot(normal.xy, normal.xy)));
+    //     return normal;
+    // #endif
+    // }
 
-    void ComputeVertexLightColor(inout v2f i)
+    //UnityStandardUtils中的BlendNormals具体实现 
+    // half3 BlendNormals (half3 n1, half3 n2) {
+    //     return normalize(half3(n1.xy + n2.xy, n1.z * n2.z));
+    // }
+
+    void ComputeVertexLightColor(inout v2f v)
     {
         #if defined(VERTEXLIGHT_ON)
             // //unity 最多支持四个顶点光源，并用4个float4结果存储这4个光源的位置
@@ -207,17 +248,78 @@
         #endif
     }
 
+    float3 CreateBinormal(float3 normal, float3 tangent, float binormalSign)
+    {
+        //i.trangent.w存储的是副法线的方向，
+        //因为创建具有双边对称性（例如人和动物）的3D模型时，一种常见的技术是左右镜像网格。 
+        //这意味着只需要编辑网格的一侧。 只需要一半的纹理数据即可。 这意味着法向和切向量也将被镜像。
+        //但副法线不应该被镜像，所以如果是镜像时i.trangent.w存储的是-1
+        //构造镜像时，还有一个附加细节。 假设对象的比例尺设置为（-1，1，1）。 这意味着它已被镜像。
+        //在这种情况下，我们必须翻转副法线，以正确反映切线空间。 实际上，当奇数个维数为负时，我们必须这样做。
+        //UnityShaderVariables通过定义float4 unity_WorldTransformParams变量来帮助我们。 
+        //当我们需要翻转副法线时，它的第四部分包含-1，否则为1。
+        return cross(normal,tangent) * binormalSign * unity_WorldTransformParams.w;        
+    }
+
+
+    float3 InitFragNormal(v2f i)
+    {       
+       
+        float3 mainNormal;
+        // //Unity 使用DXT5nm存储法线图,wy分量存储法线的xy部分，z值则由xy计算
+        // normal.xy = tex2D(_NormalMap, i.uv).wy * 2 - 1; //[0,1] -> [-1,1]
+        // normal.xy *= _BumpScale;
+        // normal.z = sqrt(1 - saturate(dot(i.normal.xy, i.normal.xy)));
+        // normal = normalize(normal);
+
+        //UnityStandardUtils定义了UnpackScaleNormal执行以上操作
+        mainNormal = UnpackScaleNormal(tex2D(_NormalMap,i.uv.xy),_BumpScale);
+        float3 detailNormal = UnpackScaleNormal(tex2D(_DetailNormalMap,i.uv.zw),_DetailBumpScale);
+        //混合两张法线贴图，增加细节
+        //混合方法1 ： 偏倒数相加
+        //float3 normal = float3(mainNormal.xy / mainNormal.z + detailNormal.xy / detailNormal.z, 1);
+        //混合方法2 ： whiteout blending ,放大了xy方向，使细节更明显，Unity内部也是使用此方法
+        //float3 normal = float3(mainNormal.xy + detailNormal.xy, mainNormal.z * detailNormal.z);
+
+        //UnityStandardUtils内定义的BlendNormals就是whiteout blending操作
+        float3 tangentSpaceNormal = BlendNormals(mainNormal,detailNormal);
+        
+        #if defined(BINORMAL_PER_FRAGMENT)
+            float3 binormal = CreateBinormal(i.normal, i.tangent.xyz, i.tangent.w);
+        #else
+            float3 binormal = i.binormal;
+        #endif
+
+        float3 normal = tangentSpaceNormal.x * i.tangent + tangentSpaceNormal.y * binormal +  tangentSpaceNormal.z * i.normal;
+
+        normal = normalize(normal);
+
+        return normal;
+    } 
+
+   
+
     v2f vert (appdata v)
     {
         v2f o;
         o.vertex = UnityObjectToClipPos(v.vertex);
-        o.uv = v.uv;
+        //TRRANSFORM_TEX确保在贴图有缩放和偏移的情况下仍能返回正确的uv
+        o.uv.xy = TRANSFORM_TEX(v.uv,_MainTex);
+        o.uv.zw = TRANSFORM_TEX(v.uv,_DetailTex);
+
         //合批后本地空间的法线方向会改变，所以需要变换到世界空间
         //将法线变换到世界空间，如果直接用unity_ObjectToWorld变换，缩放后法线会受影响
         //公式的推导参考<shader入门精要>                
         o.normal = mul(transpose((float3x3)unity_WorldToObject),v.normal);
         o.normal = normalize(o.normal);
         o.worldPos = mul(unity_ObjectToWorld,v.vertex);
+        #if defined(BINORMAL_PER_FRAGMENT)
+            o.tangent = float4(UnityObjectToWorldDir(v.tangent.xyz), v.tangent.w);
+        #else
+            o.tangent = UnityObjectToWorldDir(v.tangent.xyz);
+            o.binormal = CreateBinormal(o.normal, o.tangent, v.tangent.w);
+        #endif
+
         //UnityCG 提供了相同操作的接口 UnityObjectToWorldNormal
         //o.normal = UnityObjectToWorldNormal(v.normal);
         ComputeVertexLightColor(o);
@@ -226,8 +328,10 @@
 
  	fixed4 frag (v2f i) : SV_Target
     {
-        //不同单位长度的法线经过差值后不能得到单位向量，需要再归一化
-        i.normal = normalize(i.normal);
+        // //不同单位长度的法线经过差值后不能得到单位向量，需要再归一化
+        // i.normal = normalize(i.normal);
+        float3 normal = InitFragNormal(i); 
+
 
         //也可以在顶点函数计算视角方向并插值，但可能存在过渡不平缓的情况
         float3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
@@ -237,11 +341,12 @@
         //reflect 计算公式为： D - 2N(N·D) ,推导过程网上有
         //float3 halfVector = normalize(lightDir + viewDir);
 
-        float3 albedo = tex2D(_MainTex,i.uv).rgb * _Tint.rgb;
+
+        float3 albedo = tex2D(_MainTex, i.uv.xy).rgb * _Tint.rgb;
+        albedo *= tex2D(_DetailTex, i.uv.zw) * unity_ColorSpaceDouble; 
 
         //使用金属工作流时，高光颜色由反射率乘以金属度
         float3 _SpecularTint = albedo * _Metallic;
-
 
         //当入射 DotClamped(halfVector,i.normal)表示的是当halfVector与normal重合度
         //越高反射光强度越强
@@ -252,7 +357,7 @@
         //UnityStandardUtils 中定义的 EnergyConservationBetweenDiffuseAndSpecular做的就是相同操作
         // float oneMinusReflectivity = 1 - max(_SpecularTint.r,max(_SpecularTint.g,_SpecularTint.b));
         //albedo *= oneMinusReflectivity;
-
+ 
         float oneMinusReflectivity;
         //oneMinusReflectivity 在方法里面计算并返回
         // albedo = EnergyConservationBetweenDiffuseAndSpecular(
@@ -265,15 +370,15 @@
         albedo = _DiffuseAndSpecularFromMetallic(
             albedo, _Metallic, _SpecularTint.rgb, oneMinusReflectivity
         );
+        
+
         //DotClamped定义在UnityStandardBRDF,等价于 saturate(dot(a,b));
         //float3 diffuse = albedo * lightColor * DotClamped(lightDir, i.normal);
-
- 
-
+        
         return UNITY_BRDF_PBS(
                 albedo, _SpecularTint,
                 oneMinusReflectivity, _Smoothness,
-                i.normal, viewDir,
+                normal, viewDir,
                 CreateLight(i), CreateIndirectLight(i)
             );
 
