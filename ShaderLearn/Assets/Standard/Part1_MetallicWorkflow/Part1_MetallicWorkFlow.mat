@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Part4
+  m_Name: Part1_MetallicWorkFlow
   m_Shader: {fileID: 4800000, guid: d9d40d4d9a3c7da4eb3e2ffad94e8f6e, type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4

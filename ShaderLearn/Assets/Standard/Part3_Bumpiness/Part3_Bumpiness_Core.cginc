@@ -14,9 +14,7 @@
         float4 vertex : POSITION;
         float3 normal : NORMAL;
         float2 uv : TEXCOORD0;
-        float4 tangent : TEXCOORD1;
-      
-
+        float4 tangent : TANGENT;
     };
 
     struct v2f
