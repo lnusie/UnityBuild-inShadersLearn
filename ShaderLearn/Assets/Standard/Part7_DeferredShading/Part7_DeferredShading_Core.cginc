@@ -39,6 +39,18 @@
         #endif
     };
 
+    struct FragmentOutput
+    {
+        #if defined(DEFERRED_PASS)
+            float4 gBuffer0 : SV_TARGET0;
+            float4 gBuffer1 : SV_TARGET1;
+            float4 gBuffer2 : SV_TARGET2;
+            float4 gBuffer3 : SV_TARGET3;
+        #else
+            float4 color : SV_TARGET;
+        #endif 
+    };
+
     fixed4 _Tint;
     float _Smoothness;
     //float4 _SpecularTint;
@@ -90,86 +102,40 @@
         return albedo * oneMinusReflectivity;
     }
 
-    //AutoLight中的UNITY_LIGHT_ATTENUATION关于点光源的具体实现
-    //这里用了一张1维的衰减纹理存储衰减的值
-    // #ifdef POINT
-    // uniform sampler2D __LightTexture0;
-    // uniform unityShadowCoord4x4 _unity_WorldToLight;
-    // #define _UNITY_LIGHT_ATTENUATION(destName, input, worldPos)  
-    //     unityShadowCoord3 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xyz;
-    //     fixed destName = (tex2D(_LightTexture0, dot(lightCoord, lightCoord).rr). 
-    //         UNITY_ATTEN_CHANNEL * SHADOW_ATTENUATION(input));
-    // #endif
-
-    //AutoLight中的UNITY_LIGHT_ATTENUATION关于聚光灯光源的具体实现
-    // _LightTexture0是光源遮罩贴图，可以自己指定
-    // #ifdef SPOT
-    // uniform sampler2D _LightTexture0;
-    // uniform unityShadowCoord4x4 unity_WorldToLight;
-    // uniform sampler2D _LightTextureB0;
-    // inline fixed UnitySpotCookie(unityShadowCoord4 LightCoord) {
-    //      return tex2D(_LightTexture0, LightCoord.xy / LightCoord.w + 0.5).w;
-    // }
-    // inline fixed UnitySpotAttenuate(unityShadowCoord3 LightCoord) {
-    //      return tex2D(_LightTextureB0, dot(LightCoord, LightCoord).xx).UNITY_ATTEN_CHANNEL;
-    // }
-    // #define UNITY_LIGHT_ATTENUATION(destName, input, worldPos) 
-    //      unityShadowCoord4 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)); 
-    //      fixed destName = (lightCoord.z > 0) * UnitySpotCookie(lightCoord) * 
-    //          UnitySpotAttenuate(lightCoord.xyz) * SHADOW_ATTENUATION(input);
-    // #endif
-    // 
-    //AutoLight中的UNITY_LIGHT_ATTENUATION关于带cookie的平行光源的具体实现
-    // _LightTexture0是光源遮罩贴图，可以自己指定
-    // #ifdef DIRECTIONAL_COOKIE
-    // uniform sampler2D _LightTexture0;
-    // uniform unityShadowCoord4x4 unity_WorldToLight;
-    // #define UNITY_LIGHT_ATTENUATION(destName, input, worldPos) 
-    //     unityShadowCoord2 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xy; 
-    //     fixed destName = tex2D(_LightTexture0, lightCoord).w * SHADOW_ATTENUATION(input);
-    //         
-    // #endif
-
-    //AutoLight中的UNITY_LIGHT_ATTENUATION关于带cookie的点光源的具体实现
-    //这里cookie贴图_LightTexture0是一张cubemap
-    // #ifdef POINT_COOKIE
-    // uniform samplerCUBE _LightTexture0;
-    // uniform unityShadowCoord4x4 unity_WorldToLight;
-    // uniform sampler2D _LightTextureB0;
-    // #define UNITY_LIGHT_ATTENUATION(destName, input, worldPos) 
-    //     unityShadowCoord3 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xyz; 
-    //     fixed destName = tex2D(_LightTextureB0, dot(lightCoord, lightCoord).rr).UNITY_ATTEN_CHANNEL *
-    //           texCUBE(_LightTexture0, lightCoord).w * SHADOW_ATTENUATION(input);
-    // #endif
-
     //根据光的类型返回相应的UnityLight结构体
     //UnityLight保存并不是当前光源的信息，
     //而是当前光源对于当前片元的信息
     UnityLight CreateLight(v2f i)
     {
         UnityLight light;
-        #if defined(POINT) || defined(SPOT) || defined(POINT_COOKIE)
-            light.dir = normalize(_WorldSpaceLightPos0.xyz - i.worldPos);
+        #if defined(DEFERRED_PASS)
+            //输出到GBuffer的颜色应该不带光照计算
+            light.dir = float3(0,1,0);
+            light.color = 0;
         #else
-            //平行光没有光源位置，所以_WorldSpaceLightPos0.xyz就是光的方向
-            light.dir = _WorldSpaceLightPos0.xyz;
-        #endif
+            #if defined(POINT) || defined(SPOT) || defined(POINT_COOKIE)
+                light.dir = normalize(_WorldSpaceLightPos0.xyz - i.worldPos);
+            #else
+                //平行光没有光源位置，所以_WorldSpaceLightPos0.xyz就是光的方向
+                light.dir = _WorldSpaceLightPos0.xyz;
+            #endif
 
-        float3 lightVec = _WorldSpaceLightPos0.xyz - i.worldPos;
-        //计算光强，光强随距离增大而减小，如点光源.分母+1是为了防止距离过近是attenuation变得很大
-        //float attenuation = 1 / (1 + dot(lightVec,lightVec)); 
-        // #if defined(SHADOW_SCREEN)
-        //     //采样当前光源生成的屏幕阴影纹理 
-        //     float attenuation = tex2D(_ShadowMapTexture, i.shadowCoordinates.xy / i.shadowCoordinates.w);
-        //      SHADOW_ATTENUATION 执行了与上面相同的计算
-        //      float attenuation = SHADOW_ATTENUATION(i);
-        // #else
-        //#endif
-        //UNITY_LIGHT_ATTENUATION里面有判断SHADOW_SCREEN宏并进行相应计算的操作
-        //并且根据不同光源，对阴影的采样也不同
-        UNITY_LIGHT_ATTENUATION(attenuation, i, i.worldPos);
-        light.color = _LightColor0.rgb * attenuation;
-        light.ndotl = DotClamped(i.normal,light.dir);
+            float3 lightVec = _WorldSpaceLightPos0.xyz - i.worldPos;
+            //计算光强，光强随距离增大而减小，如点光源.分母+1是为了防止距离过近是attenuation变得很大
+            //float attenuation = 1 / (1 + dot(lightVec,lightVec)); 
+            // #if defined(SHADOW_SCREEN)
+            //     //采样当前光源生成的屏幕阴影纹理 
+            //     float attenuation = tex2D(_ShadowMapTexture, i.shadowCoordinates.xy / i.shadowCoordinates.w);
+            //      SHADOW_ATTENUATION 执行了与上面相同的计算
+            //      float attenuation = SHADOW_ATTENUATION(i);
+            // #else
+            //#endif
+            //UNITY_LIGHT_ATTENUATION里面有判断SHADOW_SCREEN宏并进行相应计算的操作
+            //并且根据不同光源，对阴影的采样也不同
+            UNITY_LIGHT_ATTENUATION(attenuation, i, i.worldPos);
+            light.color = _LightColor0.rgb * attenuation;
+            //light.ndotl = DotClamped(i.normal,light.dir);
+        #endif 
         return light;
     }
 
@@ -211,7 +177,7 @@
             indirectLight.diffuse = i.vertexLightColor;
         #endif
 
-        #if defined(FORWARD_BASE_PASS)
+        #if defined(FORWARD_BASE_PASS) || defined(DEFERRED_PASS) //延迟渲染计算灯光是不会计算环境光的，所以要先算好
             indirectLight.diffuse += max(0, ShadeSH9(float4(i.normal, 1)));
             // float3 reflectDir = reflect(-viewDir, i.normal);
             // float roughness = 1 - _Smoothness;       
@@ -256,90 +222,14 @@
             float occlusion = GetOcclusion(i);
             indirectLight.diffuse *= occlusion;
             indirectLight.specular *= occlusion;
+            #if defined(DEFERRED_PASS) && UNITY_ENABLE_REFLECTION_BUFFERS
+                indirectLight.specular = 0;
+            #endif
+
         #endif
 
         return indirectLight;
     }
-
-    //UnityCG中Shade4PointLights函数具体实现
-    // float3 _Shade4PointLights (
-    //     float4 lightPosX, float4 lightPosY, float4 lightPosZ,
-    //     float3 lightColor0, float3 lightColor1,
-    //     float3 lightColor2, float3 lightColor3,
-    //     float4 lightAttenSq, float3 pos, float3 normal) {
-    //     // to light vectors
-    //     float4 toLightX = lightPosX - pos.x;
-    //     float4 toLightY = lightPosY - pos.y;
-    //     float4 toLightZ = lightPosZ - pos.z;
-    //     // squared lengths
-    //     float4 lengthSq = 0;
-    //     lengthSq += toLightX * toLightX;
-    //     lengthSq += toLightY * toLightY;
-    //     lengthSq += toLightZ * toLightZ;
-    //     // NdotL
-    //     float4 ndotl = 0;
-    //     ndotl += toLightX * normal.x;
-    //     ndotl += toLightY * normal.y;
-    //     ndotl += toLightZ * normal.z;
-    //     // correct NdotL 
-    //     // rsqrt（x） = 1/ 根号x
-    //     float4 corr = rsqrt(lengthSq);
-    //     ndotl = max(float4(0,0,0,0), ndotl * corr);
-    //     // attenuation
-    //     float4 atten = 1.0 / (1.0 + lengthSq * lightAttenSq);
-    //     float4 diff = ndotl * atten;
-    //     // final color
-    //     float3 col = 0;
-    //     col += lightColor0 * diff.x;
-    //     col += lightColor1 * diff.y;
-    //     col += lightColor2 * diff.z;
-    //     col += lightColor3 * diff.w;
-    //     return col;
-    // }
-
-    //UnityStandardUtils中UnpackScaleNormal的实现 内部判断了是否使用DXT5nm格式的法线贴图
-    // half3 UnpackScaleNormal (half4 packednormal, half bumpScale) {
-    // #if defined(UNITY_NO_DXT5nm)
-    //     return packednormal.xyz * 2 - 1;
-    // #else
-    //     half3 normal;
-    //     normal.xy = (packednormal.wy * 2 - 1);
-    //     #if (SHADER_TARGET >= 30)
-    //         // SM2.0: instruction count limitation
-    //         // SM2.0: normal scaler is not supported
-    //         normal.xy *= bumpScale;
-    //     #endif
-    //     normal.z = sqrt(1.0 - saturate(dot(normal.xy, normal.xy)));
-    //     return normal;
-    // #endif
-    // }
-
-    //UnityStandardUtils中的BlendNormals具体实现 
-    // half3 BlendNormals (half3 n1, half3 n2) {
-    //     return normalize(half3(n1.xy + n2.xy, n1.z * n2.z));
-    // }
-
-    //UnityCG中ComputeScreenPos的具体实现，当需要翻转Y坐标时，_ProjectParams.x变量为-1
-    //在使用Direct3D9时，它会注意纹理对齐。在进行单遍立体渲染时，还需要特殊的逻辑。
-    // inline float4 ComputeNonStereoScreenPos (float4 pos) {
-    //     float4 o = pos * 0.5f;
-    //     #if defined(UNITY_HALF_TEXEL_OFFSET)
-    //         o.xy = float2(o.x, o.y * _ProjectionParams.x) +
-    //             o.w * _ScreenParams.zw;
-    //     #else
-    //         o.xy = float2(o.x, o.y * _ProjectionParams.x) + o.w;
-    //     #endif
-    //     o.zw = pos.zw;
-    //     return o;
-    // }
-
-    // inline float4 ComputeScreenPos (float4 pos) {
-    //     float4 o = ComputeNonStereoScreenPos(pos);
-    //     #ifdef UNITY_SINGLE_PASS_STEREO
-    //         o.xy = TransformStereoScreenSpaceTex(o.xy, pos.w);
-    //     #endif
-    //     return o;
-    // }
 
     void ComputeVertexLightColor(inout v2f v)
     {
@@ -386,7 +276,7 @@
     }
 
     float3 GetEmission (v2f i) {
-        #if defined(FORWARD_BASE_PASS)
+        #if defined(FORWARD_BASE_PASS) || defined(DEFERRED_PASS)
             #if defined(_EMISSION_MAP)
                 return tex2D(_EmissionMap, i.uv.xy) * _Emission;
             #else
@@ -460,7 +350,7 @@
             //UnityStandardUtils内定义的BlendNormals就是whiteout blending操作
             float3 detailNormal = UnpackScaleNormal(tex2D(_DetailNormalMap,i.uv.zw),_DetailBumpScale);
             detailNormal = lerp(float3(0, 0, 1), detailNormal, GetDetailMask(i));
-            normal = BlendNormals(mainNormal,detailNormal);
+            normal = BlendNormals(normal,detailNormal);
         #endif
         return normal;
     }
@@ -517,7 +407,7 @@
 	    );
     } 
 
- 	fixed4 frag (v2f i) : SV_Target
+ 	FragmentOutput frag (v2f i) 
     {
         float alpha = GetAlpha(i);
         #if defined(_RENDERING_CUTOUT)
@@ -532,39 +422,15 @@
         //也可以在顶点函数计算视角方向并插值，但可能存在过渡不平缓的情况
         float3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
 
-        //Blinn-Phong模型，近似模拟Blinn模型
-        //避免计算 reflect(-lightDir, i.normal); 
-        //reflect 计算公式为： D - 2N(N·D) ,推导过程网上有
-        //float3 halfVector = normalize(lightDir + viewDir);
-
-        // float3 albedo = tex2D(_MainTex, i.uv.xy).rgb * _Tint.rgb;
-        // albedo *= tex2D(_DetailTex, i.uv.zw) * unity_ColorSpaceDouble; 
         float3 albedo = GetAlbedo(i);
 
         //使用金属工作流时，高光颜色由反射率乘以金属度
-        float3 _SpecularTint = albedo * _Metallic;
+        float3 specularTint = albedo * _Metallic;
 
-
-        //当入射 DotClamped(halfVector,i.normal)表示的是当halfVector与normal重合度
-        //越高反射光强度越强
-        //金属的镜面反射往往是彩色的，这里用_SpecularTint来模拟
-        //float3 specular = _SpecularTint.rgb * lightColor * pow(DotClamped(halfVector,i.normal), _Smoothness * 100);
-        
-        //保证能量守恒，高光与漫反射相加的和小于等于1，
-        //UnityStandardUtils 中定义的 EnergyConservationBetweenDiffuseAndSpecular做的就是相同操作
-        // float oneMinusReflectivity = 1 - max(_SpecularTint.r,max(_SpecularTint.g,_SpecularTint.b));
-        //albedo *= oneMinusReflectivity;
- 
         float oneMinusReflectivity;
-        //oneMinusReflectivity 在方法里面计算并返回
-        // albedo = EnergyConservationBetweenDiffuseAndSpecular(
-        //     albedo, _SpecularTint.rgb, oneMinusReflectivity
-        // );
-        //以上得到的 albedo 的计算过程是简化了的，实际上高光强度和反射率不只与金属度相关，
-        //还与颜色空间有关，UnityStandardUtils了提供DiffuseAndSpecularFromMetallic 方法
-        //在进行以上操作时还加入了与颜色空间相关的操作
+ 
         albedo = _DiffuseAndSpecularFromMetallic(
-            albedo, GetMetallic(i), _SpecularTint, oneMinusReflectivity
+            albedo, GetMetallic(i), specularTint, oneMinusReflectivity
         );
 
         //能量守恒：同一束光不能既被反射，又穿过对象。
@@ -574,11 +440,7 @@
             alpha = 1 - oneMinusReflectivity + alpha * oneMinusReflectivity;
 	    #endif
       
-        //DotClamped定义在UnityStandardBRDF,等价于 saturate(dot(a,b));
-        //float3 diffuse = albedo * lightColor * DotClamped(lightDir, i.normal);
-        
-
-        float4 color = UNITY_BRDF_PBS(  albedo, _SpecularTint,
+        float4 color = UNITY_BRDF_PBS(  albedo, specularTint,
                                         oneMinusReflectivity, GetSmoothness(i),
                                         i.normal, viewDir,
                                         CreateLight(i), CreateIndirectLight(i, viewDir)
@@ -587,5 +449,22 @@
         #if defined(_RENDERING_FADE) || defined(_RENDERING_TRANSPARENT)
             color.a = alpha;
         #endif
-        return color;                            
+        FragmentOutput output; 
+        #if defined(DEFERRED_PASS)
+            output.gBuffer0.rgb = albedo;
+            output.gBuffer0.a = GetOcclusion(i);
+            output.gBuffer1.rgb = specularTint;
+            output.gBuffer1.a = GetSmoothness(i);
+            output.gBuffer2 = float4(i.normal * 0.5 + 0.5, 1);
+            #if !defined(UNITY_HDR_ON)
+                //LDR模式下，需要进行对数编码（不知道为啥）
+                color.rgb = exp2(-color.rgb);
+            #endif
+
+            output.gBuffer3 = color;
+            return output;
+        #else
+            return output;
+        #endif
+
     }

@@ -1,4 +1,4 @@
-﻿Shader "X_Shader/Standard/Part5_MoreProperties"
+﻿Shader "X_Shader/Standard/Part8_ApplyFog"
 {
     Properties
     {
@@ -17,7 +17,7 @@
         [NoScaleOffset] _DetailNormalMap ("Detail Normals",2D) = "bump"{}
         _DetailBumpScale ("Detail Bump Scale", Float) = 1
 
-        //可优化： 金属度，光滑度，阴影遮挡存储为一张贴图，并公用一个采样器sampler，只进行一次采样
+        //可优化： 金属度，光滑度，阴影遮挡存储为一张贴图，并共用一个采样器sampler，只进行一次采样
 
         _MetallicMap ("Metallic", 2D) = "white" {}
         _EmissionMap ("Emission", 2D) = "black" {}
@@ -28,11 +28,17 @@
 
         _DetailMask ("Detail Mask", 2D) = "white" {}
 
+        _AlphaCutoff ("Alpha Cutoff", Range(0, 1)) = 0.5
+
+        [HideInInspector]_SrcBlend ("_SrcBlend", Float) = 1
+		[HideInInspector]_DstBlend ("_DstBlend", Float) = 0
+        [HideInInspector] _ZWrite ("_ZWrite", Float) = 1
     }
 
     CGINCLUDE //在这个位置定义的关键字对所有Pass都生效
 
     #define BINORMAL_PER_FRAGMENT
+    #define FOG_DISTANCE
 
     ENDCG
 
@@ -42,8 +48,9 @@
         {
         	Tags{
         		"LightMode" = "ForwardBase"
-
         	}
+            Blend [_SrcBlend] [_DstBlend]
+            ZWrite [_ZWrite]
 
             CGPROGRAM
 
@@ -60,15 +67,18 @@
             #pragma shader_feature _NORMAL_MAP
             #pragma shader_feature _DETAIL_ALBEDO_MAP   
 			#pragma shader_feature _DETAIL_NORMAL_MAP
-
+	        #pragma shader_feature _ _RENDERING_CUTOUT _RENDERING_FADE _RENDERING_TRANSPARENT
+            #pragma multi_compile_fog
+ 
             #pragma vertex vert
             #pragma fragment frag
 
             #define FORWARD_BASE_PASS
 
-            #include "Part5_MoreProperties_Core.cginc"
             //当该Pass的光投射阴影时，Unity会查找所有启用SHADOWS_SCREEN 关键字的变体
             #pragma multi_compile _ SHADOW_SCREEN
+
+            #include "Part8_ApplyFog_Core.cginc"
             ENDCG
         }
 
@@ -105,7 +115,47 @@
 
             //顶点光源宏，顶点光源只支持点光源
             #pragma multi_compile _ VERTEXLIGHT_ON
-            #include "Part5_MoreProperties_Core.cginc"
+            #include "Part8_ApplyFog_Core.cginc"
+            ENDCG
+
+        }
+
+        Pass
+        {
+            Tags 
+            {
+                "LightMode" = "Deferred"
+            }
+            CGPROGRAM
+
+            #pragma target 3.0
+            
+            //GPU支持写入多个渲染目标时才可以使用延迟着色
+            #pragma exclude_renderers nomrt
+
+            #pragma shader_feature _METALLIC_MAP
+            #pragma shader_feature _ _SMOOTHNESS_ALBEDO _SMOOTHNESS_METALLIC
+            #pragma shader_feature _OCCLUSION_MAP
+            #pragma shader_feature _EMISSION_MAP
+            #pragma shader_feature _DETAIL_MASK
+            #pragma shader_feature _NORMAL_MAP
+            #pragma shader_feature _DETAIL_ALBEDO_MAP   
+			#pragma shader_feature _DETAIL_NORMAL_MAP
+            
+            //延迟渲染不需要_RENDERING_FADE和_RENDERING_TRANSPARENT关键字的变体
+	        #pragma shader_feature _ _RENDERING_CUTOUT
+            #pragma multi_compile _ UNITY_HDR_ON
+ 
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #define DEFERRED_PASS
+
+            //当该Pass的光投射阴影时，Unity会查找所有启用SHADOWS_SCREEN 关键字的变体
+            #pragma multi_compile _ SHADOW_SCREEN
+
+            #include "Part8_ApplyFog_Core.cginc"
+
             ENDCG
 
         }
@@ -116,9 +166,16 @@
                 "LightMode" = "ShadowCaster"
             }
 
+            Blend [_SrcBlend] One
+
             CGPROGRAM
 
             #pragma target 3.0
+            #pragma shader_feature _ _RENDERING_CUTOUT _RENDERING_FADE _RENDERING_TRANSPARENT
+			#pragma shader_feature _SMOOTHNESS_ALBEDO
+            #pragma shader_feature _SEMITRANSPARENT_SHADOWS
+            
+
             #pragma multi_compile_shadowcaster
 
             #pragma vertex ShadowVertex
@@ -130,5 +187,5 @@
         }
 
     }
-    CustomEditor "StandardShaderGUI"
+    CustomEditor "XStandardShaderGUI"
 }

@@ -120,6 +120,46 @@
 
         Pass
         {
+            Tags 
+            {
+                "LightMode" = "Deferred"
+            }
+            CGPROGRAM
+
+            #pragma target 3.0
+            
+            //GPU支持写入多个渲染目标时才可以使用延迟着色
+            #pragma exclude_renderers nomrt
+
+            #pragma shader_feature _METALLIC_MAP
+            #pragma shader_feature _ _SMOOTHNESS_ALBEDO _SMOOTHNESS_METALLIC
+            #pragma shader_feature _OCCLUSION_MAP
+            #pragma shader_feature _EMISSION_MAP
+            #pragma shader_feature _DETAIL_MASK
+            #pragma shader_feature _NORMAL_MAP
+            #pragma shader_feature _DETAIL_ALBEDO_MAP   
+			#pragma shader_feature _DETAIL_NORMAL_MAP
+            
+            //延迟渲染不需要_RENDERING_FADE和_RENDERING_TRANSPARENT关键字的变体
+	        #pragma shader_feature _ _RENDERING_CUTOUT
+            #pragma multi_compile _ UNITY_HDR_ON
+ 
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #define DEFERRED_PASS
+
+            //当该Pass的光投射阴影时，Unity会查找所有启用SHADOWS_SCREEN 关键字的变体
+            #pragma multi_compile _ SHADOW_SCREEN
+
+            #include "Part7_DeferredShading_Core.cginc"
+
+            ENDCG
+
+        }
+
+        Pass
+        {
             Tags {
                 "LightMode" = "ShadowCaster"
             }
