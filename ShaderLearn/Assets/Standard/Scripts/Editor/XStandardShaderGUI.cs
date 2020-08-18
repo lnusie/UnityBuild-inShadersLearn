@@ -166,7 +166,7 @@ public class XStandardShaderGUI : ShaderGUI
         GUILayout.Label("Main Maps", EditorStyles.boldLabel);
 
         MaterialProperty mainTex = FindProperty("_MainTex");
-        editor.TexturePropertySingleLine(MakeLabel(mainTex,"Albedo (RGB)"), mainTex, FindProperty("_Tint"));
+        editor.TexturePropertySingleLine(MakeLabel(mainTex,"Albedo (RGB)"), mainTex, FindProperty("_Color"));
         if(shouldShowAlphaCutoff)
             DoAlphaCutoff();
         DoMetallic();
@@ -269,15 +269,29 @@ public class XStandardShaderGUI : ShaderGUI
     void DoEmission()
     {
         MaterialProperty map = FindProperty("_EmissionMap");
+        Texture tex = map.textureValue;
+        bool enableEmission = IsKeywordEnabled("_EMISSION");
         EditorGUI.BeginChangeCheck();
+        enableEmission = EditorGUILayout.Toggle("Emission", enableEmission);
         editor.TexturePropertyWithHDRColor(
-            MakeLabel("Emission (RGB)"), map, FindProperty("_Emission"),
+            MakeLabel(map, "Emission (RGB)"), map, FindProperty("_Emission"),
             emissionConfig, false
         );
         if (EditorGUI.EndChangeCheck())
         {
-            SetKeyword("_EMISSION_MAP", map.textureValue);
+            if (tex != map.textureValue)
+            {
+                SetKeyword("_EMISSION_MAP", map.textureValue != null);
+            }
+            SetKeyword("_EMISSION", enableEmission);
         }
+
+        foreach (Material m in editor.targets)
+        {
+            //支持烘焙自发光
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.BakedEmissive;
+        }
+
     }
 
     void DoOcclusion()
@@ -309,7 +323,7 @@ public class XStandardShaderGUI : ShaderGUI
 
     void DoAlphaCutoff()
     {
-        MaterialProperty slider = FindProperty("_AlphaCutoff");
+        MaterialProperty slider = FindProperty("_Cutoff");
         EditorGUI.indentLevel += 2;
         editor.ShaderProperty(slider, MakeLabel(slider));
         EditorGUI.indentLevel -= 2;
