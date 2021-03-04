@@ -17,8 +17,7 @@
         // No culling or depth
         Cull Back 
 
-
-        Pass
+        Pass//主光源
         {
         	Tags{
         		"LightMode" = "ForwardBase"
@@ -37,7 +36,7 @@
             ENDCG
         }
 
-        Pass
+        Pass //副光源（1个）
         {
             Tags
             {

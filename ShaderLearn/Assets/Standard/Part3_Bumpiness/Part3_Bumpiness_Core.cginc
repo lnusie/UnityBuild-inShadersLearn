@@ -146,7 +146,7 @@
         //计算光衰减，光强随距离增大而减小，如点光源,分母+1是为了防止距离过近是attenuation变得很大
         //float attenuation = 1 / (1 + dot(lightVec,lightVec)); 
 
-        //AutoLight中UNITY_LIGHT_ATTENUATION也是计算光衰减的，但计算方法不太一样
+        //AutoLight中UNITY_LIGHT_ATTENUATION也是计算光衰减的，各种光源的计算方法不一样
         UNITY_LIGHT_ATTENUATION(attenuation, 0, i.worldPos);
 
         light.color = _LightColor0.rgb * attenuation;
@@ -172,6 +172,7 @@
     //     float3 lightColor0, float3 lightColor1,
     //     float3 lightColor2, float3 lightColor3,
     //     float4 lightAttenSq, float3 pos, float3 normal) {
+
     //     // to light vectors
     //     float4 toLightX = lightPosX - pos.x;
     //     float4 toLightY = lightPosY - pos.y;
@@ -182,17 +183,21 @@
     //     lengthSq += toLightY * toLightY;
     //     lengthSq += toLightZ * toLightZ;
     //     // NdotL
+
     //     float4 ndotl = 0;
     //     ndotl += toLightX * normal.x;
     //     ndotl += toLightY * normal.y;
     //     ndotl += toLightZ * normal.z;
+
     //     // correct NdotL 
     //     // rsqrt（x） = 1/ 根号x
     //     float4 corr = rsqrt(lengthSq);
     //     ndotl = max(float4(0,0,0,0), ndotl * corr);
+
     //     // attenuation
     //     float4 atten = 1.0 / (1.0 + lengthSq * lightAttenSq);
     //     float4 diff = ndotl * atten;
+
     //     // final color
     //     float3 col = 0;
     //     col += lightColor0 * diff.x;
@@ -235,7 +240,7 @@
             // float attenuations = 1 / (1+dot(lightVec,lightVec));
             // //unity_4LightAtten0是UnityShaderVariables中定义的衰减值，应该是用于更平滑的衰减
             // v.vertexLightColor = unity_LightColor[0].rgb * ndotl * attenuations * unity_4LightAtten0.x;
-
+            
             //Shade4PointLights相当于执行了4次以上的操作并混合
             i.vertexLightColor = Shade4PointLights(
             unity_4LightPosX0, unity_4LightPosY0, unity_4LightPosZ0,
@@ -258,7 +263,6 @@
         //当我们需要翻转副法线时，它的第四部分包含-1，否则为1。
         return cross(normal,tangent) * binormalSign * unity_WorldTransformParams.w;        
     }
-
 
     float3 InitFragNormal(v2f i)
     {       
@@ -295,8 +299,6 @@
         return normal;
     } 
 
-   
-
     v2f vert (appdata v)
     {
         v2f o;
@@ -320,6 +322,8 @@
 
         //UnityCG 提供了相同操作的接口 UnityObjectToWorldNormal
         //o.normal = UnityObjectToWorldNormal(v.normal);
+
+        //当VERTEXLIGHT_ON时，将除渲染过的光源外的其他光源（Unity按远近光强等重要程度排序，最多四个）在顶点计算，在片段里插值
         ComputeVertexLightColor(o);
         return o;
     }

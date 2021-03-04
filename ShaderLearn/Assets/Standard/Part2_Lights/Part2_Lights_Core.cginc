@@ -212,7 +212,9 @@
         v2f o;
         o.vertex = UnityObjectToClipPos(v.vertex);
         o.uv = v.uv;
-        //合批后本地空间的法线方向会改变，所以需要变换到世界空间
+
+        //光照的计算可以在本地空间算（把光的方向变换到本地空间），也可以在世界空间算（把本地空间的法线方向变换到世界空间）
+
         //将法线变换到世界空间，如果直接用unity_ObjectToWorld变换，缩放后法线会受影响
         //公式的推导参考<shader入门精要>                
         o.normal = mul(transpose((float3x3)unity_WorldToObject),v.normal);
@@ -232,9 +234,8 @@
         //也可以在顶点函数计算视角方向并插值，但可能存在过渡不平缓的情况
         float3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
 
-        //Blinn-Phong模型，近似模拟Blinn模型
-        //避免计算 reflect(-lightDir, i.normal); 
-        //reflect 计算公式为： D - 2N(N·D) ,推导过程网上有
+        //Blinn-Phong模型，近似模拟Blinn模型，避免计算 reflect(-lightDir, i.normal)
+        //reflect 计算公式为： L - 2N(N·L) ,推导过程网上有
         //float3 halfVector = normalize(lightDir + viewDir);
 
         float3 albedo = tex2D(_MainTex,i.uv).rgb * _Tint.rgb;
@@ -259,7 +260,7 @@
         //     albedo, _SpecularTint.rgb, oneMinusReflectivity
         // );
 
-        //以上得到的 albedo 是的计算过程是简化了的，实际上高光强度和反射率不只与金属度相关，
+        //以上得到的 albedo 的计算过程是简化了的，实际上高光强度和反射率不只与金属度相关，
         //还与颜色空间有关，UnityStandardUtils了提供DiffuseAndSpecularFromMetallic 方法在进行
         //以上操作时还加入了与颜色空间相关的操作
         albedo = _DiffuseAndSpecularFromMetallic(
@@ -268,7 +269,6 @@
         //DotClamped定义在UnityStandardBRDF,等价于 saturate(dot(a,b));
         //float3 diffuse = albedo * lightColor * DotClamped(lightDir, i.normal);
 
- 
 
         return UNITY_BRDF_PBS(
                 albedo, _SpecularTint,
