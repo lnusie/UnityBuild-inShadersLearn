@@ -146,17 +146,17 @@
 
         float3 lightVec = _WorldSpaceLightPos0.xyz - i.worldPos;
         //计算光强，光强随距离增大而减小，如点光源.分母+1是为了防止距离过近是attenuation变得很大
-        //float attenuation = 1 / (1 + dot(lightVec,lightVec)); 
-        // #if defined(SHADOW_SCREEN)
-        //     //采样当前光源生成的屏幕阴影纹理 
-        //     float attenuation = tex2D(_ShadowMapTexture, i.shadowCoordinates.xy / i.shadowCoordinates.w);
-        //      SHADOW_ATTENUATION 执行了与上面相同的计算
-        //      float attenuation = SHADOW_ATTENUATION(i);
-        // #else
-        //#endif
+        float attenuation = 1 / (1 + dot(lightVec,lightVec)); 
+        #if defined(SHADOW_SCREEN)
+            //采样当前光源生成的屏幕阴影纹理 
+            float attenuation = tex2D(_ShadowMapTexture, i.shadowCoordinates.xy / i.shadowCoordinates.w);
+             SHADOW_ATTENUATION 执行了与上面相同的计算
+             float attenuation = SHADOW_ATTENUATION(i);
+        #else
+        #endif
         //UNITY_LIGHT_ATTENUATION里面有判断SHADOW_SCREEN宏并进行相应计算的操作
         //并且根据不同光源，对阴影的采样也不同
-        UNITY_LIGHT_ATTENUATION(attenuation, i, i.worldPos);
+        //UNITY_LIGHT_ATTENUATION(attenuation, i, i.worldPos);
         light.color = _LightColor0.rgb * attenuation;
         light.ndotl = DotClamped(i.normal,light.dir);
         return light;

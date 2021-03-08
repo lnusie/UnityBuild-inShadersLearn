@@ -19,6 +19,7 @@ sampler2D _LightBuffer;
 sampler2D _CameraGBufferTexture0;
 sampler2D _CameraGBufferTexture1;
 sampler2D _CameraGBufferTexture2;
+sampler2D _CameraGBufferTexture4;
 #if defined(SHADOWS_SCREEN)
      sampler2D _ShadowMapTexture;  //访问阴影贴图
 #endif
@@ -47,6 +48,17 @@ float4 _LightColor, _LightDir, _LightPos; //获取当前正在渲染的光
 // half UnityComputeShadowFade(float fadeDist) {
 //     return saturate(fadeDist * _LightShadowData.z + _LightShadowData.w);
 // }
+
+//获取ShadowMask的值
+float GetShadowMaskAttenuation (float2 uv) {
+	float attenuation = 1;
+	#if defined (SHADOWS_SHADOWMASK)
+		float4 mask = tex2D(_CameraGBufferTexture4, uv);
+          //unity_OcclusionMaskSelector : 单通道掩码
+		attenuation = saturate(dot(mask, unity_OcclusionMaskSelector));
+	#endif
+	return attenuation;
+}
 
 UnityLight CreateLight(float2 uv, float3 worldPos, float viewZ)
 {
@@ -94,18 +106,30 @@ UnityLight CreateLight(float2 uv, float3 worldPos, float viewZ)
           #endif
      #endif 
      
+     #if defined(SHADOWS_SHADOWMASK)
+		shadowed = true;
+	#endif
+
+
      if(shadowed)
      {
           float shadowFadeDistance = UnityComputeShadowFadeDistance(worldPos, viewZ);
           float shadowFade = UnityComputeShadowFade(shadowFadeDistance);
-          shadowAttenuation = saturate(shadowAttenuation + shadowFade);
+          //shadowAttenuation = saturate(shadowAttenuation + shadowFade);
 
+          //混合ShadowMask和实时阴影
+          shadowAttenuation = UnityMixRealtimeAndBakedShadows(
+			shadowAttenuation, GetShadowMaskAttenuation(uv), shadowFade
+		);
           #if defined(UNITY_FAST_COHERENT_DYNAMIC_BRANCHING) && defined(SHADOWS_SOFT)
-               UNITY_BRANCH
-               if(shadowFade > 0.99)
-               {
-                    shadowAttenuation = 1;
-               }
+               #if !defined(SHADOWS_SHADOWMASK)
+                    UNITY_BRANCH
+                    if(shadowFade > 0.99)
+                    {
+                         shadowAttenuation = 1;
+                    }
+                    s_a_huangjinshengdian
+               #endif
           #endif
      }
 
@@ -114,6 +138,8 @@ UnityLight CreateLight(float2 uv, float3 worldPos, float viewZ)
 }
 
 UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
+
+
 
 v2f VertexProgram (a2v v) {
      v2f i;
@@ -157,8 +183,6 @@ float4 FragmentProgram (v2f i) : SV_Target {
      #endif
      return color;
 }
-
-
 
 #endif
 

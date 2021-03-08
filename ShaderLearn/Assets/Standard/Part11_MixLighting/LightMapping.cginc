@@ -61,7 +61,6 @@ float4 LightMappingFragmentProgram (v2f_meta i) : SV_Target
     o.Albedo = UnityLightmappingAlbedo (data.diffColor, data.specColor, data.smoothness);
     o.SpecularColor = data.specColor;
     o.Emission = GetEmission(i.uv.xy);
-
     return UnityMetaFragment(o);
 }
 

@@ -5,13 +5,25 @@
     
     #include "UnityPBSLighting.cginc" 
     #include "AutoLight.cginc" 
-    #endif 
+
 
     #if defined(FOG_LINEAR) || defined(FOG_EXP) || defined(FOG_EXP2)
         #if !defined(FOG_DISTANCE)
     	    #define FOG_DEPTH 1
         #endif
         #define FOG_ON 1
+    #endif
+
+    #if !defined(LIGHTMAP_ON) && defined(SHADOWS_SCREEN)
+        #if defined(SHADOWS_SHADOWMASK) && !defined(UNITY_NO_SCREENSPACE_SHADOWS)
+            #define ADDITIONAL_MASKED_DIRECTIONAL_SHADOWS 1
+        #endif
+    #endif
+
+    #if defined(LIGHTMAP_ON) && defined(SHADOWS_SCREEN)
+        #if defined(LIGHTMAP_SHADOW_MIXING) && !defined(SHADOWS_SHADOWMASK)
+            #define SUBTRACTIVE_LIGHTING 1
+        #endif
     #endif
 
 	struct appdata
@@ -26,7 +38,7 @@
     struct v2f
     {
         float4 uv : TEXCOORD0;
-        float4 vertex : SV_POSITION;
+        float4 pos : SV_POSITION;
         float3 normal : TEXCOORD1;
         #if defined(BINORMAL_PER_FRAGMENT)//在frag方法里计算副法线
             float4 tangent : TEXCOORD2;
@@ -40,17 +52,19 @@
 	    #else
 		    float3 worldPos : TEXCOORD4;
 	    #endif
-        #if defined(SHADOW_SCREEN)
-            //float4 shadowCoordinates : TEXCOORD5;
-            //SHADOW_COORDS 也是定义shadowCoordinates
-            //SHADOW_COORDS(5)
-            UNITY_SHADOW_COORDS(5)
-        #endif 
+        UNITY_SHADOW_COORDS(5)
+
+        // #if defined(SHADOW_SCREEN)
+        //     //float4 shadowCoordinates : TEXCOORD5;
+        //     //SHADOW_COORDS 也是定义shadowCoordinates
+        //     //SHADOW_COORDS(5)
+        //     UNITY_SHADOW_COORDS(5)
+        // #endif 
         #if defined(VERTEXLIGHT_ON)
             float3 vertexLightColor : TEXCOORD6;
         #endif
 
-        #if defined(LIGHTMAP_ON)
+        #if defined(LIGHTMAP_ON) || ADDITIONAL_MASKED_DIRECTIONAL_SHADOWS
             float2 lightmapUV : TEXCOORD6;
         #endif
 
@@ -63,6 +77,12 @@
             float4 gBuffer1 : SV_TARGET1;
             float4 gBuffer2 : SV_TARGET2;
             float4 gBuffer3 : SV_TARGET3;
+
+            //有些平台可能不支持太多buffer
+            // (UNITY_ALLOWED_MRT_COUNT > 4)用于判断是否有足够多的渲染目标才使用SHADOWS_SHADOWMASK
+            #if defined(SHADOWS_SHADOWMASK) && (UNITY_ALLOWED_MRT_COUNT > 4)
+			    float4 gBuffer4 : SV_Target4;
+		    #endif
         #else
             float4 color : SV_TARGET;
         #endif 
@@ -119,17 +139,70 @@
         return albedo * oneMinusReflectivity;
     }
 
+    // //UnityShadowLibrary 中UnitySampleBakedOcclusion的部分实现：（实际代码还包含混合光照探针的强度）
+    // //采样阴影贴图
+    // fixed UnitySampleBakedOcclusion (float2 lightmapUV, float3 worldPos) {
+    //     #if defined (SHADOWS_SHADOWMASK)
+    //         #if defined(LIGHTMAP_ON)
+    //             fixed4 rawOcclusionMask = UNITY_SAMPLE_TEX2D_SAMPLER(
+    //                 unity_ShadowMask, unity_Lightmap, lightmapUV.xy
+    //             );
+    //         #else
+    //             fixed4 rawOcclusionMask =
+    //                 UNITY_SAMPLE_TEX2D(unity_ShadowMask, lightmapUV.xy);
+    //         #endif
+    //         //unity_OcclusionMaskSelector是一个只有一个值为1的Vector,起到掩码的作用
+    //         return saturate(dot(rawOcclusionMask, unity_OcclusionMaskSelector));
+    //     #else
+    //         return 1.0;
+    //     #endif
+    // }
+    // //UnityShadowLibrary 中UnityMixRealtimeAndBakedShadows的部分实现：
+    // 对实时阴影与烘焙阴影进行混合
+    // inline half UnityMixRealtimeAndBakedShadows (half realtimeShadowAttenuation, half bakedShadowAttenuation, half fade) 
+    // {
+    //     #if !defined(SHADOWS_DEPTH) && !defined(SHADOWS_SCREEN) && \
+    //         !defined(SHADOWS_CUBE)
+    //         return bakedShadowAttenuation;
+    //     #endif
+
+    //     #if defined (SHADOWS_SHADOWMASK)
+    //         #if defined (LIGHTMAP_SHADOW_MIXING)
+    //             realtimeShadowAttenuation =
+    //                 saturate(realtimeShadowAttenuation + fade);
+    //             return min(realtimeShadowAttenuation, bakedShadowAttenuation);
+    //         #else
+    //             return lerp(
+    //                 realtimeShadowAttenuation, bakedShadowAttenuation, fade
+    //             );
+    //         #endif
+    //     #else //no shadowmask
+    //         return saturate(realtimeShadowAttenuation + fade);
+    //     #endif
+    // }
+
+    //处理阴影的距离衰减，以及对ShadowMask的采样
     float FadeShadows(v2f i, float attenuation)
     {
-        //#if defined(HANDLE_SHADOWS_BLENDING_IN_GI) 
-            // float viewZ = dot(_WorldSpaceCameraPos - i.worldPos, UNITY_MATRIX_V[2].xyz);
-            // float shadowFadeDistance = UnityComputeShadowFadeDistance(i.worldPos, viewZ);
-            // float shadowFade = UnityComputeShadowFade(shadowFadeDistance);
-            // float bakedAttenuation = UnitySampleBakedOcclusion(i.lightmapUV, i.worldPos);
+        #if HANDLE_SHADOWS_BLENDING_IN_GI || ADDITIONAL_MASKED_DIRECTIONAL_SHADOWS
+            #if ADDITIONAL_MASKED_DIRECTIONAL_SHADOWS
+                attenuation = SHADOW_ATTENUATION(i);
+            #endif
+            //距离相机的z轴距离
+            float viewZ = dot(_WorldSpaceCameraPos - i.worldPos, UNITY_MATRIX_V[2].xyz);
+            //基于距离的投影
+            float shadowFadeDistance = UnityComputeShadowFadeDistance(i.worldPos, viewZ);
+            float shadowFade = UnityComputeShadowFade(shadowFadeDistance);
+            
+            //UnitySampleBakedOcclusion 对unity_ShadowMask进行采样
+            float bakedAttenuation = UnitySampleBakedOcclusion(i.lightmapUV, i.worldPos);
+            // //混合烘焙阴影和实时阴影
             // attenuation = UnityMixRealtimeAndBakedShadows(
             //     attenuation, bakedAttenuation,  shadowFade
-            // );
-        //#endif
+            // ); 
+            // attenuation = saturate(attenuation + shadowFade);
+            return bakedAttenuation;
+        #endif
         return attenuation;
     }
 
@@ -153,20 +226,19 @@
 
             float3 lightVec = _WorldSpaceLightPos0.xyz - i.worldPos.xyz;
             //计算光强，光强随距离增大而减小，如点光源.分母+1是为了防止距离过近是attenuation变得很大
-            //float attenuation = 1 / (1 + dot(lightVec,lightVec)); 
+            // float attenuation = 1 / (1 + dot(lightVec,lightVec)); 
             // #if defined(SHADOW_SCREEN)
             //     //采样当前光源生成的屏幕阴影纹理 
-            //     float attenuation = tex2D(_ShadowMapTexture, i.shadowCoordinates.xy / i.shadowCoordinates.w);
-            //      SHADOW_ATTENUATION 执行了与上面相同的计算
-            //      float attenuation = SHADOW_ATTENUATION(i);
+            //     attenuation = tex2D(_ShadowMapTexture, i.shadowCoordinates.xy / i.shadowCoordinates.w);
+            //     //SHADOW_ATTENUATION 执行了与上面相同的计算
+            //     //float attenuation = SHADOW_ATTENUATION(i);
             // #else
-            //#endif
+            // #endif
             //UNITY_LIGHT_ATTENUATION里面有判断SHADOW_SCREEN宏并进行相应计算的操作
             //并且根据不同光源，对阴影的采样也不同
             UNITY_LIGHT_ATTENUATION(attenuation, i, i.worldPos.xyz);
             attenuation = FadeShadows(i, attenuation);
             light.color = _LightColor0.rgb * attenuation;
-            //light.ndotl = DotClamped(i.normal,light.dir);
         #endif 
         return light;
     }
@@ -200,6 +272,8 @@
     }
 
     //创建环境光，如果存在顶点光源，则作为环境光
+    //UnityIndirect 保存的不是光源信息，而是当前片元相对于光的信息
+    //烘焙出的光照贴图跟阴影贴图 会在此被采样作为漫反射。
     UnityIndirect CreateIndirectLight(v2f i, float3 viewDir)
     {
         UnityIndirect indirectLight;
@@ -211,6 +285,7 @@
 
         #if defined(FORWARD_BASE_PASS) || defined(DEFERRED_PASS) //延迟渲染计算灯光是不会计算环境光的，所以要先算好混合
             #if defined(LIGHTMAP_ON) //光照贴图不会和顶点光照一起使用
+                //DecodeLightmap里应该还采样了阴影贴图。但Light设置为Mixed的时候不会采样，而是CreateLight里采样并与实时阴影混合
                 indirectLight.diffuse = DecodeLightmap(UNITY_SAMPLE_TEX2D(unity_Lightmap, i.lightmapUV)); 
                 #if defined(DIRLIGHTMAP_COMBINED)
                     //unity_Lightmap 定义了主光线的方向
@@ -472,8 +547,9 @@
     v2f vert (appdata v)
     {
         v2f o;
+        //不同平台定义变量可能有不同的默认值，UNITY_INITIALIZE_OUTPUT用于统一设置默认值
         UNITY_INITIALIZE_OUTPUT(v2f, o);
-        o.vertex = UnityObjectToClipPos(v.vertex);
+        o.pos = UnityObjectToClipPos(v.vertex);
         o.worldPos.xyz = mul(unity_ObjectToWorld,v.vertex);
         #if FOG_DEPTH
             o.worldPos.w = o.vertex.z;
@@ -493,29 +569,31 @@
             o.tangent = UnityObjectToWorldDir(v.tangent.xyz);
             o.binormal = CreateBinormal(o.normal, o.tangent, v.tangent.w);
         #endif
-        #if defined(SHADOW_SCREEN)
-            // i.shadowCoordinates.xy = (i.position.xy + i.position.w) * 0.5;// i.position;      
-            // i.shadowCoordinates.zw = i.position.zw;   
-            //ComputeScreenPos执行了与上面相同的计算，只不过加了比如不同平台屏幕坐标原点差异等处理
-            //i.shadowCoordinates = ComputeScreenPos(i.position);
-            //TRANSFER_SHADOW执行了以上相同的运算，差异在于要求变量名必须为shadowCoordinates，
-            //与SHADOW_COORDS搭配使用
-            //TRANSFER_SHADOW(i);
+        
+        // #if defined(SHADOW_SCREEN)
+        //     // i.shadowCoordinates.xy = (i.position.xy + i.position.w) * 0.5;// i.position;      
+        //     // i.shadowCoordinates.zw = i.position.zw;   
+        //     //ComputeScreenPos执行了与上面相同的计算，只不过加了比如不同平台屏幕坐标原点差异等处理
+        //     //i.shadowCoordinates = ComputeScreenPos(i.position);
+        //     //TRANSFER_SHADOW执行了以上相同的运算，差异在于要求变量名必须为shadowCoordinates，
+        //     //与SHADOW_COORDS搭配使用
+        //     //TRANSFER_SHADOW(i);
 
-            UNITY_TRANSFER_SHADOW(o, v.uv1);
-        #endif  
+        //     UNITY_TRANSFER_SHADOW(o, v.uv1);
+        // #endif  
+
         //TRRANSFORM_TEX确保在贴图有缩放和偏移的情况下仍能返回正确的uv
         o.uv.xy = TRANSFORM_TEX(v.uv,_MainTex);
         o.uv.zw = TRANSFORM_TEX(v.uv,_DetailTex);
         
-        #if defined(LIGHTMAP_ON)
+        #if defined(LIGHTMAP_ON) || ADDITIONAL_MASKED_DIRECTIONAL_SHADOWS
             //TRANSFORM_TEX里会默认使用 unity_Lightmap_ST
             //然而unity_Lightmap对应的是 unity_LightmapST
             //所以需要手动调整uv
             o.lightmapUV = v.uv1 * unity_LightmapST.xy + unity_LightmapST.zw;
-
-           
         #endif
+
+        UNITY_TRANSFER_SHADOW(o, v.uv1);
 
         ComputeVertexLightColor(o);
         return o;
@@ -590,8 +668,19 @@
                 color.rgb = exp2(-color.rgb);
             #endif
             output.gBuffer3 = color;
+
+            #if defined(SHADOWS_SHADOWMASK) && (UNITY_ALLOWED_MRT_COUNT > 4)
+                float2 shadowUV = 0;
+                #if defined(LIGHTMAP_ON)
+                    shadowUV = i.lightmapUV;
+                #endif
+                //除了不输出一个通道的值，UnityGetRawBakedOcclusions的功能与UnitySampleBakedOcclusion相同
+                output.gBuffer4 = UnityGetRawBakedOcclusions(shadowUV, i.worldPos.xyz);
+		    #endif
+
         #else
             output.color = ApplyFog(color, i);
         #endif
         return output;
     }
+#endif 

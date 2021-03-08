@@ -69,20 +69,22 @@
             #pragma shader_feature _DETAIL_ALBEDO_MAP   
 			#pragma shader_feature _DETAIL_NORMAL_MAP
 	        #pragma shader_feature _ _RENDERING_CUTOUT _RENDERING_FADE _RENDERING_TRANSPARENT
+            
+            #pragma multi_compile_fwdbase
+            #pragma multi_compile_fog
 
-
-            //当该Pass的光投射阴影时，Unity会查找所有编译SHADOWS_SCREEN 关键字的变体，并defined SHADOW_SCREEN 使用阴影贴图
-            #pragma multi_compile _ SHADOW_SCREEN
+            // //当该Pass的光投射阴影时，Unity会查找所有编译SHADOWS_SCREEN 关键字的变体，并defined SHADOW_SCREEN 使用阴影贴图
+            //multi_compile_fwdbase里已经包含里SHADOW_SCREEN
+            // #pragma multi_compile _ SHADOW_SCREEN
 
 			//当着色器应该使用光照贴图时，Unity会搜索所有有编译LIGHTMAP_ON的变体，并defined LIGHTMAP_ON使用光照贴图
             #pragma multi_compile _ LIGHTMAP_ON VERTEXLIGHT_ON
 
-            #pragma multi_compile_fog
 
             #pragma vertex vert
             #pragma fragment frag
 
-            #define FORWARD_BASE_PASS
+			#define FORWARD_BASE_PASS
 
             #include "Part11_MixLighting_Core.cginc"
 
