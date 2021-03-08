@@ -178,9 +178,9 @@
     float3 BoxProjection( float3 position,float3 direction,
         float4 cubemapPosition, float3 boxMin, float3 boxMax)
     {
-        //是否应用盒投影
+        
         UNITY_BRANCH
-        if(cubemapPosition.w > 0)
+        if(cubemapPosition.w > 0)//是否应用盒投影
         {
             float3 factors = ((direction > 0 ? boxMax : boxMin) - position) / direction;
             float scalar = min(min(factors.x, factors.y), factors.z);
