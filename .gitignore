@@ -7,3 +7,10 @@ ShaderLearn/Temp/
 ShaderLearn/Packages/
 ShaderLearn/.vs/
 ShaderLearn/obj/
+ShaderLearn/Assets/Materials/
+ShaderLearn/Assets/Scenes/
+ShaderLearn/Assets/Scripts/
+ShaderLearn/Assets/Shaders/
+ShaderLearn/Assets/Scenes.meta
+ShaderLearn/Assets/Scripts.meta
+ShaderLearn/Assets/Shaders.meta
