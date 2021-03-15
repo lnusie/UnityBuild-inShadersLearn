@@ -172,11 +172,11 @@ public class XStandardShaderGUI : ShaderGUI
         DoMetallic();
         DoSmoothness();
         DoNormals();
+        DoParallaxMap();
         DoOcclusion();
         DoEmission();
         DoDetailMask();
         editor.TextureScaleOffsetProperty(mainTex);
-
     }
 
     void DoMetallic()
@@ -318,6 +318,21 @@ public class XStandardShaderGUI : ShaderGUI
         if (EditorGUI.EndChangeCheck())
         {
             SetKeyword("_DETAIL_MASK", mask.textureValue);
+        }
+    }
+
+    void DoParallaxMap()
+    {
+        MaterialProperty map = FindProperty("_ParallaxMap");
+        if (map == null) return;
+        EditorGUI.BeginChangeCheck();
+        editor.TexturePropertySingleLine(
+            MakeLabel(map, "Parallax (G)"), map,
+            map.textureValue ? FindProperty("_ParallaxStrength") : null
+        );
+        if (EditorGUI.EndChangeCheck())
+        {
+            SetKeyword("_PARALLAX_MAP", map.textureValue);
         }
     }
 
