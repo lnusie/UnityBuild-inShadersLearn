@@ -85,6 +85,13 @@
 
 			#define FORWARD_BASE_PASS
 
+            #define PARALLAX_BIAS 0
+            //#define PARALLAX_OFFSET_LIMITING
+            #define PARALLAX_FUNCTION ParallaxRaymarching
+            #define PARALLAX_RAYMARCHING_INTERPOLATE
+		    #define PARALLAX_RAYMARCHING_STEPS 10
+            #define PARALLAX_RAYMARCHING_SEARCH_STEPS 10
+            #define PARALLAX_SUPPORT_SCALED_DYNAMIC_BATCHING
             #include "Part14_Parallax_Core.cginc"
 
             ENDCG

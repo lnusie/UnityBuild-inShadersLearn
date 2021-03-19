@@ -645,6 +645,11 @@
         ComputeVertexLightColor(o);
 
         #if defined(_PARALLAX_MAP)
+            //Unity在动态合批时为了性能考虑不会将切线和法线归一化
+            #if defined(PARALLAX_SUPPORT_SCALED_DYNAMIC_BATCHING)
+                v.tangent.xyz = normalize(v.tangent.xyz);
+                v.normal = normalize(v.normal);
+            #endif
             float3x3 object2Tangent = float3x3(
                 v.tangent.xyz,
                 cross(v.normal, v.tangent.xyz) * v.tangent.w,
@@ -680,6 +685,83 @@
     // 	vpos.y = frac(vpos.y) * 0.0625 /* 1/16 */ + unity_LODFade.y;
     // 	clip(tex2D(_DitherMaskLOD2D, vpos).a - 0.5);
     // }
+
+    float GetParallaxHeight(float2 uv)
+    {
+        return tex2D(_ParallaxMap, uv.xy).g;
+    }
+
+    float2 ParallaxOffset(float2 uv, float3 viewDir)
+    {
+        float height = GetParallaxHeight(uv);
+        height -= 0.5f;//为了让低区域更低，高区域更高
+        height *= _ParallaxStrength;
+        //除以Z是为了获得更真实的透视投影效果, 视角越平，偏移越大。加0.42是为了防止分母为0
+        float2 dir = viewDir.xy / (viewDir.z + 0.42);
+        return dir * height;
+    }
+
+    float2 ParallaxRaymarching(float2 uv, float3 viewDir)
+    {
+        #if !defined(PARALLAX_RAYMARCHING_STEPS)
+		    #define PARALLAX_RAYMARCHING_STEPS 10
+	    #endif
+        float2 uvOffset = 0;
+        float stepSize = 1.0 / PARALLAX_RAYMARCHING_STEPS;
+        float2 uvDelta = viewDir.xy * (stepSize * _ParallaxStrength); 
+        float stepHeight = 1;
+        float surfaceHeight = GetParallaxHeight(uv);
+
+        float2 prevUVOffset = uvOffset;
+        float prevStepHeight = stepHeight;
+        float prevSurfaceHeight = surfaceHeight;
+
+        //这里如果写成while (stepHeight > surfaceHeight) 编译器会报错，意思是不可在循环中采样 原因如下：
+        //GPU在采样前会先确定Mipmap等级选择不同分辨率的贴图
+        //而确定MipmapLevel的算法需要对比相邻几个frag的uv坐标，而这一算法需要所有frag执行相同的分支
+        //当出现这种情况时，编译器会尝试展开循环，让每个frag都执行最大循环次数。（或者尝试调整代码结构，把采样代码移到循环外）
+        //使用while时 编译器不知道最大次数展开不了，所以编译器才会报错。
+        for(int i = 1; i < PARALLAX_RAYMARCHING_STEPS && stepHeight > surfaceHeight; i++)
+        {
+            prevUVOffset = uvOffset;
+            prevStepHeight = stepHeight;
+            prevSurfaceHeight = surfaceHeight;
+            uvOffset -= uvDelta;
+            stepHeight -= stepSize;
+            surfaceHeight = GetParallaxHeight(uv + uvOffset);          
+        }
+        
+        #if !defined(PARALLAX_RAYMARCHING_SEARCH_STEPS)
+            #define PARALLAX_RAYMARCHING_SEARCH_STEPS 0
+        #endif 
+
+        #if PARALLAX_RAYMARCHING_SEARCH_STEPS > 0 
+            //使用二分法逐步逼近碰撞点
+            for(int i = 0; i < PARALLAX_RAYMARCHING_SEARCH_STEPS; i++)
+            {
+                uvDelta *= 0.5f;
+                stepSize *= 0.5f;
+                //用step优化分支
+                uvOffset -= uvDelta;
+                stepHeight -= stepSize;
+                //a < b 返回 0 ， a > b 返回 1 
+                fixed dir = step(stepHeight, surfaceHeight);
+                uvOffset += 2 * dir * uvDelta;
+                stepHeight += 2 * dir * stepSize;
+                surfaceHeight =  GetParallaxHeight(uv + uvOffset);
+            }
+        #elif defined(PARALLAX_RAYMARCHING_INTERPOLATE) 
+            //应用数学方法进行预测两步之间比较合理的碰撞点
+            //细节见：https://catlikecoding.com/unity/tutorials/rendering/part-20/
+            float prevDifference = prevStepHeight - prevSurfaceHeight;
+            float difference = surfaceHeight - stepHeight;
+            float t = prevDifference / (prevDifference + difference);
+            //uvOffset = lerp(prevUVOffset, uvOffset, t);
+            uvOffset = prevUVOffset - uvDelta * t;
+        #endif
+        return uvOffset;
+    }
+
     void ApplyParallax(inout v2f i)
     {
         #if defined(_PARALLAX_MAP)
@@ -687,16 +769,12 @@
             // #if defined(PARALLAX_OFFSET_LIMITING)
             //     #define PARALLAX_BIAS 0.42
             // #endif 
-
-            //除以Z是为了获得更真实的透视投影效果,加0.42是为了防止分母为0
-            float2 dir = i.tangentViewDir.xy / (i.tangentViewDir.z + 0.42);
-
-            fixed height = tex2D(_ParallaxMap, i.uv.xy).g;
-            height -= 0.5;//为了让低区域更低，高区域更高
-            height *= _ParallaxStrength;
-            float2 uvOffset = dir * height;
+            #if !defined(PARALLAX_FUNCTION)
+			    #define PARALLAX_FUNCTION ParallaxOffset
+		    #endif
+            float2 uvOffset = PARALLAX_FUNCTION(i.uv.xy, i.tangentViewDir.xyz);
             i.uv.xy += uvOffset;
-            //
+            //细节贴图uv也要偏移，细节贴图与主贴图尺寸、缩放不一致会导致偏移比例对不上。
             i.uv.zw += uvOffset * (_DetailTex_ST.xy / _MainTex_ST.xy);
         #endif 
     }
