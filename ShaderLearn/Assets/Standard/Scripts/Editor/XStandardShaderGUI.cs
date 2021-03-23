@@ -93,6 +93,10 @@ public class XStandardShaderGUI : ShaderGUI
         this.editor = materialEditor;
         this.properties = properties;
         DoRenderingMode();
+        if (target.HasProperty("_WireframeColor"))
+        {
+            DoWireframe();
+        }
         DoMain();
         DoSecondary();
     }
@@ -344,7 +348,24 @@ public class XStandardShaderGUI : ShaderGUI
         EditorGUI.indentLevel -= 2;
     }
 
-    
+    void DoWireframe()
+    {
+        GUILayout.Label("Wireframe", EditorStyles.boldLabel);
+        EditorGUI.indentLevel += 2;
+        editor.ShaderProperty(
+            FindProperty("_WireframeColor"),
+            MakeLabel("Color")
+        );
+        editor.ShaderProperty(
+            FindProperty("_WireframeSmoothing"),
+            MakeLabel("Smoothing", "In screen space.")
+        );
+        editor.ShaderProperty(
+            FindProperty("_WireframeThickness"),
+            MakeLabel("Thickness", "In screen space.")
+        );
+        EditorGUI.indentLevel -= 2;
+    }
 
     void SetKeyword(string keyword, bool state)
     {

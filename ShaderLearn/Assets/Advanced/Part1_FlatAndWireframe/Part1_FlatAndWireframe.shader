@@ -30,6 +30,10 @@
         [HideInInspector]_SrcBlend ("_SrcBlend", Float) = 1
 		[HideInInspector]_DstBlend ("_DstBlend", Float) = 0
         [HideInInspector] _ZWrite ("_ZWrite", Float) = 1
+
+        _WireframeColor ("Wireframe Color", Color) = (0, 0, 0)
+        _WireframeSmoothing ("Wireframe Smoothing", Range(0, 10)) = 1
+        _WireframeThickness ("Wireframe Thickness", Range(0, 10)) = 1
     }
 
     CGINCLUDE //在这个位置定义的关键字对所有Pass都生效
