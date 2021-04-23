@@ -60,7 +60,7 @@
 
             
             //	_ZBufferParams的定义
-            // x = 1-far/near
+            // x = 1 - far/near
             // y = far/near
             // z = x/far
             // w = y/far
@@ -72,7 +72,7 @@
             fixed4 frag (v2f i) : SV_Target
             {
                 float depth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, i.uv);
-                //depth应该是裁剪空间下的1/z
+                //depth应该是裁剪空间下的z
                 //我们必须转换成世界空间中的线性深度值
                 //首先使用UnityCG中定义的Linear01Depth函数将其转换为线性范围。
                 depth = Linear01Depth(depth);
